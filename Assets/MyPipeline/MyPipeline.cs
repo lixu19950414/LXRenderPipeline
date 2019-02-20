@@ -11,6 +11,10 @@ public class MyPipeline : RenderPipeline
     private CullResults cull;
     private Material errorMaterial;
     private DrawRendererFlags drawFlags;
+    CommandBuffer cameraBuffer = new CommandBuffer()
+    {
+        name = "Render Camera"
+    };
     #endregion
 
     #region Lights
@@ -45,7 +49,12 @@ public class MyPipeline : RenderPipeline
     const int shadowTileBorderSize = 4;
     Vector4[] shadowData = new Vector4[maxVisibleLights];
     Matrix4x4[] worldToShadowMatrices = new Matrix4x4[maxVisibleLights];
-
+    const string shadowsHardKeyword = "_SHADOWS_HARD";
+    const string shadowsSoftKeyword = "_SHADOWS_SOFT";
+    CommandBuffer shadowBuffer = new CommandBuffer()
+    {
+        name = "Render Shadows"
+    };
     #endregion
 
     public MyPipeline(bool enableDynamic, bool enableInstance, int shadowMapSize)
@@ -61,16 +70,6 @@ public class MyPipeline : RenderPipeline
         GraphicsSettings.lightsUseLinearIntensity = true;
         this.shadowMapSize = shadowMapSize;
     }
-
-    CommandBuffer cameraBuffer = new CommandBuffer()
-    {
-        name = "Render Camera"
-    };
-
-    CommandBuffer shadowBuffer = new CommandBuffer()
-    {
-        name = "Render Shadows"
-    };
 
     public override void Render(ScriptableRenderContext renderContext, Camera[] cameras)
     {
@@ -102,15 +101,25 @@ public class MyPipeline : RenderPipeline
         CullResults.Cull(ref cullingParameters, context, ref cull);
         #endregion
 
-        #region ConfigureLightsAndShadows
+        #region ConfigureLightsAndRenderShadows
         if (cull.visibleLights.Count > 0)
         {
             ConfigureLights();
-            RenderShadows(context);
+            if (shadowTileCount > 0)
+            {
+                RenderShadows(context);
+            }
+            else
+            {
+                cameraBuffer.DisableShaderKeyword(shadowsHardKeyword);
+				cameraBuffer.DisableShaderKeyword(shadowsSoftKeyword);
+            }
         }
         else
         {
             cameraBuffer.SetGlobalVector(lightIndicesOffsetAndCountID, Vector4.zero);
+            cameraBuffer.DisableShaderKeyword(shadowsHardKeyword);
+            cameraBuffer.DisableShaderKeyword(shadowsSoftKeyword);
         }
         #endregion
 
@@ -182,13 +191,15 @@ public class MyPipeline : RenderPipeline
         shadowMap.filterMode = FilterMode.Bilinear;
         shadowMap.wrapMode = TextureWrapMode.Clamp;
 
+        CoreUtils.SetRenderTarget(shadowBuffer, shadowMap, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store, ClearFlag.Depth);
+
         shadowBuffer.BeginSample("Render Shadows");
         context.ExecuteCommandBuffer(shadowBuffer);
         shadowBuffer.Clear();
 
-        CoreUtils.SetRenderTarget(shadowBuffer, shadowMap, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store, ClearFlag.Depth);
-
         int tileIndex = 0;
+        bool hardShadows = false;
+		bool softShadows = false;
         for (int i = 0 ; i < Mathf.Min(cull.visibleLights.Count, maxVisibleLights); ++i)
         {
             // Get the view and projection matrixs from the spot light
@@ -199,10 +210,16 @@ public class MyPipeline : RenderPipeline
                 shadowData[i].x = 0f;
 				continue;
             };
+            if (shadowData[i].y <= 0f)
+				hardShadows = true;
+			else
+				softShadows = true;
+            
             float tileOffsetX = tileIndex  % split;
 			float tileOffsetY = tileIndex  / split;
 			tileViewport.x = tileOffsetX * tileSize;
 			tileViewport.y = tileOffsetY * tileSize;
+            
             
             if (split > 1)
             {
@@ -249,6 +266,9 @@ public class MyPipeline : RenderPipeline
         {
             shadowBuffer.DisableScissorRect();
         }
+
+        CoreUtils.SetKeyword(shadowBuffer, shadowsHardKeyword, hardShadows);
+		CoreUtils.SetKeyword(shadowBuffer, shadowsSoftKeyword, softShadows);
         
         shadowBuffer.SetGlobalTexture(shadowMapId, shadowMap);
         shadowBuffer.SetGlobalVectorArray(shadowDataId, shadowData);
@@ -265,12 +285,8 @@ public class MyPipeline : RenderPipeline
     void ConfigureLights()
     {
         shadowTileCount = 0;
-        for (int i = 0; i < cull.visibleLights.Count; i++)
+        for (int i = 0; i < Mathf.Min(cull.visibleLights.Count, maxVisibleLights); i++)
         {
-            if (i == maxVisibleLights)
-            {
-				break;
-			}
             VisibleLight light = cull.visibleLights[i];
             visibleLightColors[i] = light.finalColor;
             Vector4 attenuation = Vector4.zero;
@@ -299,7 +315,7 @@ public class MyPipeline : RenderPipeline
                     float outerRad = Mathf.Deg2Rad * 0.5f * light.spotAngle;
 					float outerCos = Mathf.Cos(outerRad);
                     float outerTan = Mathf.Tan(outerRad);
-					float innerCos = Mathf.Cos(Mathf.Atan(((46f / 64f) * outerTan)));
+					float innerCos = Mathf.Cos(Mathf.Atan(((46.0f / 64.0f) * outerTan)));
                     float angleRange = Mathf.Max(innerCos - outerCos, 0.001f);
 					attenuation.z = 1f / angleRange;
 					attenuation.w = -outerCos * attenuation.z;
@@ -311,7 +327,7 @@ public class MyPipeline : RenderPipeline
                     {
                         shadowTileCount += 1;
 						shadow.x = shadowLight.shadowStrength;
-                        shadow.y = shadowLight.shadows == LightShadows.Soft ? 1f : 0f;
+                        shadow.y = shadowLight.shadows == LightShadows.Soft ? 1.0f : 0.0f;
 					}
 				}
 			}

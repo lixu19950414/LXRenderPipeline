@@ -17,7 +17,6 @@ CBUFFER_START(UnityPerDraw)
 	float4 unity_4LightIndices0, unity_4LightIndices1;
 CBUFFER_END
 
-
 #define MAX_VISIBLE_LIGHTS 16
 CBUFFER_START(_LightBuffer)
 	float4 _VisibleLightColors[MAX_VISIBLE_LIGHTS];
@@ -31,6 +30,7 @@ CBUFFER_START(_ShadowBuffer)
 	float4 _ShadowData[MAX_VISIBLE_LIGHTS];
 	float4 _ShadowMapSize;
 CBUFFER_END
+
 TEXTURE2D_SHADOW(_ShadowMap);
 SAMPLER_CMP(sampler_ShadowMap);
 
@@ -38,6 +38,25 @@ SAMPLER_CMP(sampler_ShadowMap);
 UNITY_INSTANCING_BUFFER_START(PerInstance)
 	UNITY_DEFINE_INSTANCED_PROP(float4, _Color)
 UNITY_INSTANCING_BUFFER_END(PerInstance)
+
+
+float HardShadowAttenuation (float4 shadowPos)
+{
+	return SAMPLE_TEXTURE2D_SHADOW(_ShadowMap, sampler_ShadowMap, shadowPos.xyz);
+}
+
+float SoftShadowAttenuation (float4 shadowPos)
+{
+	real tentWeights[9];
+	real2 tentUVs[9];
+	SampleShadow_ComputeSamples_Tent_5x5(_ShadowMapSize, shadowPos.xy, tentWeights, tentUVs);
+	float attenuation = 0;
+	for (int i = 0; i < 9; i++) {
+		attenuation += tentWeights[i] * SAMPLE_TEXTURE2D_SHADOW(_ShadowMap, sampler_ShadowMap, float3(tentUVs[i].xy, shadowPos.z));
+	}
+	return attenuation;
+}
+
 
 float ShadowAttenuation (int index, float3 worldPos)
 {
@@ -49,22 +68,20 @@ float ShadowAttenuation (int index, float3 worldPos)
 	shadowPos.xyz /= shadowPos.w;
 
 	float attenuation;
-	if (_ShadowData[index].y == 0)
-	{
-		// This sampler performs comparasion before bilinear interpolation
-		attenuation = SAMPLE_TEXTURE2D_SHADOW(_ShadowMap, sampler_ShadowMap, shadowPos.xyz);
-	}
-	else
-	{
-		real tentWeights[9];
-		real2 tentUVs[9];
-		SampleShadow_ComputeSamples_Tent_5x5(_ShadowMapSize, shadowPos.xy, tentWeights, tentUVs);
-		attenuation = 0;
-		for (int i = 0; i < 9; i++)
-		{
-			attenuation += tentWeights[i] * SAMPLE_TEXTURE2D_SHADOW(_ShadowMap, sampler_ShadowMap, float3(tentUVs[i].xy, shadowPos.z));
-		}
-	}
+	#if defined(_SHADOWS_HARD)
+		#if defined(_SHADOWS_SOFT)
+			if (_ShadowData[index].y == 0) {
+				attenuation = HardShadowAttenuation(shadowPos);
+			}
+			else {
+				attenuation = SoftShadowAttenuation(shadowPos);
+			}
+		#else
+			attenuation = HardShadowAttenuation(shadowPos);
+		#endif
+	#else
+		attenuation = SoftShadowAttenuation(shadowPos);
+	#endif
 	return lerp(1.0, attenuation, _ShadowData[index].x);
 }
 
