@@ -240,12 +240,9 @@ public class MyPipeline : RenderPipeline
             shadowData[i].z = tileOffsetX * tileScale;  // This z value is resued.
 			shadowData[i].w = tileOffsetY * tileScale;
             
-            if (split > 1)
-            {
-                shadowBuffer.SetViewport(tileViewport);
-                // Add a border to each shadowmap, in case of bilinear filter.
-                shadowBuffer.EnableScissorRect(new Rect(tileViewport.x + shadowTileBorderSize, tileViewport.y + shadowTileBorderSize, tileSize - shadowTileBorderSize * 2, tileSize - shadowTileBorderSize * 2));
-            }
+            shadowBuffer.SetViewport(tileViewport);
+            // Add a border to each shadowmap, in case of bilinear filter.
+            shadowBuffer.EnableScissorRect(new Rect(tileViewport.x + shadowTileBorderSize, tileViewport.y + shadowTileBorderSize, tileSize - shadowTileBorderSize * 2, tileSize - shadowTileBorderSize * 2));
             
             shadowBuffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
             shadowBuffer.SetGlobalFloat(shadowBiasId, cull.visibleLights[i].light.shadowBias);
@@ -272,10 +269,8 @@ public class MyPipeline : RenderPipeline
             tileIndex += 1;
         }
 
-        if (split > 1)
-        {
-            shadowBuffer.DisableScissorRect();
-        }
+        shadowBuffer.DisableScissorRect();
+
 
         CoreUtils.SetKeyword(shadowBuffer, shadowsHardKeyword, hardShadows);
 		CoreUtils.SetKeyword(shadowBuffer, shadowsSoftKeyword, softShadows);

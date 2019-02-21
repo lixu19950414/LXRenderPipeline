@@ -15,4 +15,4 @@ MonoBehaviour:
   shadowMapSize: 4096
   dynamicBatching: 0
   instance: 1
-  shadowDistance: 23.7
+  shadowDistance: 27.8
