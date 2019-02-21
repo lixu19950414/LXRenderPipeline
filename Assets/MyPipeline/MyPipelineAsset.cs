@@ -20,9 +20,10 @@ public class MyPipelineAsset : RenderPipelineAsset
 	bool dynamicBatching = false;
     [SerializeField]
     bool instance = false;
-
+	[SerializeField]
+	float shadowDistance = 50.0f;
     protected override IRenderPipeline InternalCreatePipeline()
     {
-        return new MyPipeline(dynamicBatching, instance, (int)shadowMapSize);
+        return new MyPipeline(dynamicBatching, instance, (int)shadowMapSize, shadowDistance);
     }
 }
